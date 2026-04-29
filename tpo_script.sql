@@ -98,3 +98,80 @@ CREATE TABLE PRESTADOR_ESPECIALIDAD (
     CONSTRAINT FK_PE_PREST      FOREIGN KEY (id_prestador)    REFERENCES PRESTADOR(id_prestador),
     CONSTRAINT FK_PE_ESP        FOREIGN KEY (id_especialidad) REFERENCES ESPECIALIDAD(id_especialidad)
 );
+
+CREATE TABLE AUTORIZACION (
+    id_autorizacion     INT IDENTITY(1,1)   NOT NULL,
+    nro_autorizacion    VARCHAR(20)         NOT NULL,
+    id_afiliado         INT                 NOT NULL,
+    id_beneficiario     INT                 NULL,
+    id_tipo             INT                 NOT NULL,
+    id_prestador        INT                 NOT NULL,
+    fecha_solicitud     DATETIME            NOT NULL DEFAULT GETDATE(),
+    fecha_vencimiento   DATE                NULL,
+    estado              VARCHAR(20)         NOT NULL DEFAULT 'PENDIENTE',
+    motivo_rechazo      VARCHAR(200)        NULL,
+    CONSTRAINT PK_AUTORIZACION      PRIMARY KEY (id_autorizacion),
+    CONSTRAINT UQ_AUT_NRO           UNIQUE (nro_autorizacion),
+    CONSTRAINT FK_AUT_AFIL          FOREIGN KEY (id_afiliado)     REFERENCES AFILIADO(id_afiliado),
+    CONSTRAINT FK_AUT_BENE          FOREIGN KEY (id_beneficiario) REFERENCES BENEFICIARIO(id_beneficiario),
+    CONSTRAINT FK_AUT_TIPO          FOREIGN KEY (id_tipo)         REFERENCES TIPO_PRESTACION(id_tipo),
+    CONSTRAINT FK_AUT_PREST         FOREIGN KEY (id_prestador)    REFERENCES PRESTADOR(id_prestador),
+    CONSTRAINT CK_AUT_ESTADO        CHECK (estado IN ('PENDIENTE','APROBADA','RECHAZADA','UTILIZADA','VENCIDA'))
+);
+
+CREATE TABLE LIQUIDACION (
+    id_liquidacion      INT IDENTITY(1,1)   NOT NULL,
+    id_autorizacion     INT                 NOT NULL,
+    id_prestador        INT                 NOT NULL,
+    fecha_prestacion    DATE                NOT NULL,
+    fecha_presentacion  DATE                NOT NULL DEFAULT CAST(GETDATE() AS DATE),
+    monto_total         DECIMAL(10,2)       NOT NULL,
+    monto_cubierto      DECIMAL(10,2)       NOT NULL,
+    monto_coseguro      DECIMAL(10,2)       NOT NULL,
+    estado              VARCHAR(20)         NOT NULL DEFAULT 'PENDIENTE',
+    CONSTRAINT PK_LIQUIDACION       PRIMARY KEY (id_liquidacion),
+    CONSTRAINT FK_LIQ_AUT           FOREIGN KEY (id_autorizacion) REFERENCES AUTORIZACION(id_autorizacion),
+    CONSTRAINT FK_LIQ_PREST         FOREIGN KEY (id_prestador)    REFERENCES PRESTADOR(id_prestador),
+    CONSTRAINT CK_LIQ_ESTADO        CHECK (estado IN ('PENDIENTE','APROBADA','PAGADA','RECHAZADA')),
+    CONSTRAINT CK_LIQ_MONTOS        CHECK (monto_cubierto + monto_coseguro <= monto_total),
+    CONSTRAINT CK_LIQ_TOTAL         CHECK (monto_total > 0),
+    CONSTRAINT CK_LIQ_CUBIERTO      CHECK (monto_cubierto >= 0),
+    CONSTRAINT CK_LIQ_COSEGURO      CHECK (monto_coseguro >= 0)
+);
+
+CREATE TABLE PAGO_PRESTADOR (
+    id_pago         INT IDENTITY(1,1)   NOT NULL,
+    id_prestador    INT                 NOT NULL,
+    periodo         CHAR(7)             NOT NULL,
+    fecha_pago      DATE                NOT NULL DEFAULT CAST(GETDATE() AS DATE),
+    monto_total     DECIMAL(10,2)       NOT NULL,
+    metodo_pago     VARCHAR(30)         NOT NULL,
+    CONSTRAINT PK_PAGO_PRESTADOR    PRIMARY KEY (id_pago),
+    CONSTRAINT FK_PAGO_PREST        FOREIGN KEY (id_prestador) REFERENCES PRESTADOR(id_prestador),
+    CONSTRAINT CK_PAGO_METODO       CHECK (metodo_pago IN ('TRANSFERENCIA','CHEQUE','DEPOSITO')),
+    CONSTRAINT CK_PAGO_MONTO        CHECK (monto_total > 0)
+);
+
+CREATE TABLE DETALLE_PAGO (
+    id_detalle      INT IDENTITY(1,1)   NOT NULL,
+    id_pago         INT                 NOT NULL,
+    id_liquidacion  INT                 NOT NULL,
+    monto           DECIMAL(10,2)       NOT NULL,
+    CONSTRAINT PK_DETALLE_PAGO  PRIMARY KEY (id_detalle),
+    CONSTRAINT FK_DP_PAGO       FOREIGN KEY (id_pago)        REFERENCES PAGO_PRESTADOR(id_pago),
+    CONSTRAINT FK_DP_LIQ        FOREIGN KEY (id_liquidacion) REFERENCES LIQUIDACION(id_liquidacion),
+    CONSTRAINT CK_DP_MONTO      CHECK (monto > 0)
+);
+
+CREATE TABLE AUDITORIA_AFILIADO (
+    id_auditoria        INT IDENTITY(1,1)   NOT NULL,
+    id_afiliado         INT                 NOT NULL,
+    operacion           VARCHAR(10)         NOT NULL,
+    campo_modificado    VARCHAR(50)         NULL,
+    valor_anterior      VARCHAR(200)        NULL,
+    valor_nuevo         VARCHAR(200)        NULL,
+    usuario             VARCHAR(50)         NOT NULL DEFAULT SYSTEM_USER,
+    fecha_hora          DATETIME            NOT NULL DEFAULT GETDATE(),
+    CONSTRAINT PK_AUDITORIA_AFIL    PRIMARY KEY (id_auditoria),
+    CONSTRAINT CK_AUDIT_OP          CHECK (operacion IN ('INSERT','UPDATE','DELETE'))
+);
