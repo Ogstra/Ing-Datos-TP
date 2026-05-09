@@ -305,3 +305,79 @@ INSERT INTO DETALLE_PAGO (id_pago, id_liquidacion, monto) VALUES
 (1, 1,  6000.00),
 (1, 3, 63000.00),
 (2, 2, 59500.00);
+
+
+SELECT id_afiliado, nro_afiliado, apellido, nombre, dni, localidad
+FROM AFILIADO
+WHERE activo = 1
+ORDER BY apellido, nombre;
+
+SELECT id_prestador, razon_social, domicilio, localidad, telefono
+FROM PRESTADOR
+WHERE tipo = 'CLINICA' AND activo = 1
+ORDER BY razon_social;
+
+SELECT nro_autorizacion, id_afiliado, id_tipo, id_prestador, fecha_solicitud
+FROM AUTORIZACION
+WHERE estado = 'PENDIENTE'
+ORDER BY fecha_solicitud;
+
+SELECT id_liquidacion, id_autorizacion, id_prestador, monto_total, monto_cubierto
+FROM LIQUIDACION
+WHERE estado = 'APROBADA'
+ORDER BY fecha_presentacion;
+
+SELECT nombre, descripcion, aporte_mensual
+FROM PLAN_COBERTURA
+WHERE aporte_mensual > 20000 AND activo = 1
+ORDER BY aporte_mensual DESC;
+
+SELECT A.nro_afiliado, A.apellido, A.nombre, A.dni, P.nombre AS nombre_plan, P.aporte_mensual
+FROM AFILIADO A
+INNER JOIN PLAN_COBERTURA P ON A.id_plan = P.id_plan
+WHERE A.activo = 1
+ORDER BY A.apellido;
+
+SELECT B.nombre AS bene_nombre, B.apellido AS bene_apellido,
+       B.parentesco, B.fecha_nacimiento,
+       A.nro_afiliado, A.apellido AS titular_apellido, A.nombre AS titular_nombre
+FROM BENEFICIARIO B
+INNER JOIN AFILIADO A ON B.id_afiliado = A.id_afiliado
+WHERE B.activo = 1
+ORDER BY A.apellido, B.parentesco;
+
+SELECT AUT.nro_autorizacion, AUT.estado, AUT.fecha_solicitud,
+       A.apellido + ', ' + A.nombre AS afiliado,
+       T.nombre AS prestacion,
+       P.razon_social AS prestador
+FROM AUTORIZACION AUT
+INNER JOIN AFILIADO        A ON AUT.id_afiliado = A.id_afiliado
+INNER JOIN TIPO_PRESTACION T ON AUT.id_tipo      = T.id_tipo
+INNER JOIN PRESTADOR       P ON AUT.id_prestador = P.id_prestador
+ORDER BY AUT.fecha_solicitud DESC;
+
+SELECT L.id_liquidacion, L.estado, L.fecha_prestacion,
+       AUT.nro_autorizacion,
+       P.razon_social AS prestador,
+       L.monto_total, L.monto_cubierto, L.monto_coseguro
+FROM LIQUIDACION L
+INNER JOIN AUTORIZACION AUT ON L.id_autorizacion = AUT.id_autorizacion
+INNER JOIN PRESTADOR    P   ON L.id_prestador    = P.id_prestador
+ORDER BY L.fecha_presentacion DESC;
+
+SELECT P.razon_social, P.tipo, P.localidad,
+       E.nombre AS especialidad
+FROM PRESTADOR P
+LEFT JOIN PRESTADOR_ESPECIALIDAD PE ON P.id_prestador    = PE.id_prestador
+LEFT JOIN ESPECIALIDAD            E  ON PE.id_especialidad = E.id_especialidad
+WHERE P.activo = 1
+ORDER BY P.razon_social, E.nombre;
+
+SELECT T.nombre AS prestacion,
+       PP.porcentaje_cobertura,
+       CASE PP.requiere_autorizacion WHEN 1 THEN 'Sí' ELSE 'No' END AS requiere_autorizacion
+FROM PLAN_PRESTACION PP
+INNER JOIN PLAN_COBERTURA  PC ON PP.id_plan = PC.id_plan
+INNER JOIN TIPO_PRESTACION T  ON PP.id_tipo = T.id_tipo
+WHERE PC.nombre = 'PLUS'
+ORDER BY PP.porcentaje_cobertura DESC;
