@@ -381,3 +381,113 @@ INNER JOIN PLAN_COBERTURA  PC ON PP.id_plan = PC.id_plan
 INNER JOIN TIPO_PRESTACION T  ON PP.id_tipo = T.id_tipo
 WHERE PC.nombre = 'PLUS'
 ORDER BY PP.porcentaje_cobertura DESC;
+
+SELECT P.nombre AS nombre_plan, COUNT(A.id_afiliado) AS total_afiliados
+FROM PLAN_COBERTURA P
+LEFT JOIN AFILIADO A ON P.id_plan = A.id_plan AND A.activo = 1
+GROUP BY P.id_plan, P.nombre
+ORDER BY total_afiliados DESC;
+
+SELECT P.razon_social, P.tipo,
+       COUNT(L.id_liquidacion) AS cant_liquidaciones,
+       SUM(L.monto_total)      AS total_presentado,
+       SUM(L.monto_cubierto)   AS total_cubierto
+FROM PRESTADOR P
+INNER JOIN LIQUIDACION L ON P.id_prestador = L.id_prestador
+GROUP BY P.id_prestador, P.razon_social, P.tipo
+ORDER BY total_cubierto DESC;
+
+SELECT P.razon_social, COUNT(L.id_liquidacion) AS cant_liquidaciones
+FROM PRESTADOR P
+INNER JOIN LIQUIDACION L ON P.id_prestador = L.id_prestador
+GROUP BY P.id_prestador, P.razon_social
+HAVING COUNT(L.id_liquidacion) > 2
+ORDER BY cant_liquidaciones DESC;
+
+SELECT estado,
+       COUNT(*)           AS cantidad,
+       AVG(monto_total)   AS promedio_total,
+       SUM(monto_cubierto) AS suma_cubierto
+FROM LIQUIDACION
+GROUP BY estado
+ORDER BY suma_cubierto DESC;
+
+SELECT P.nombre AS nombre_plan, AVG(P.aporte_mensual) AS aporte_promedio, COUNT(A.id_afiliado) AS afiliados
+FROM PLAN_COBERTURA P
+INNER JOIN AFILIADO A ON P.id_plan = A.id_plan
+WHERE A.activo = 1
+GROUP BY P.id_plan, P.nombre
+HAVING AVG(P.aporte_mensual) > 20000;
+
+SELECT A.nro_afiliado, A.apellido, A.nombre, P.nombre AS nombre_plan, P.aporte_mensual
+FROM AFILIADO A
+INNER JOIN PLAN_COBERTURA P ON A.id_plan = P.id_plan
+WHERE P.aporte_mensual > (SELECT AVG(aporte_mensual) FROM PLAN_COBERTURA WHERE activo = 1)
+ORDER BY P.aporte_mensual DESC;
+
+SELECT nro_afiliado, apellido, nombre, dni
+FROM AFILIADO
+WHERE id_afiliado IN (
+    SELECT DISTINCT id_afiliado
+    FROM AUTORIZACION
+    WHERE estado = 'APROBADA'
+)
+ORDER BY apellido;
+
+SELECT nombre, descripcion
+FROM TIPO_PRESTACION
+WHERE id_tipo IN (
+    SELECT DISTINCT id_tipo
+    FROM PLAN_PRESTACION
+    WHERE requiere_autorizacion = 1
+)
+ORDER BY nombre;
+
+SELECT P.razon_social, P.tipo, P.localidad
+FROM PRESTADOR P
+WHERE EXISTS (
+    SELECT 1
+    FROM LIQUIDACION L
+    WHERE L.id_prestador = P.id_prestador
+      AND L.estado = 'APROBADA'
+)
+ORDER BY P.razon_social;
+
+SELECT A.nro_afiliado, A.apellido, A.nombre, A.fecha_alta
+FROM AFILIADO A
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM AUTORIZACION AUT
+    WHERE AUT.id_afiliado = A.id_afiliado
+)
+ORDER BY A.apellido;
+
+SELECT A.nro_afiliado, A.apellido, A.nombre,
+       P.nombre AS nombre_plan, P.aporte_mensual,
+       P.aporte_mensual * 12 AS aporte_anual,
+       (SELECT ISNULL(SUM(L.monto_cubierto), 0)
+        FROM AUTORIZACION AUT
+        INNER JOIN LIQUIDACION L ON AUT.id_autorizacion = L.id_autorizacion
+        WHERE AUT.id_afiliado = A.id_afiliado) AS total_cubierto
+FROM AFILIADO A
+INNER JOIN PLAN_COBERTURA P ON A.id_plan = P.id_plan
+WHERE (
+    SELECT ISNULL(SUM(L.monto_cubierto), 0)
+    FROM AUTORIZACION AUT
+    INNER JOIN LIQUIDACION L ON AUT.id_autorizacion = L.id_autorizacion
+    WHERE AUT.id_afiliado = A.id_afiliado
+) > P.aporte_mensual * 12
+ORDER BY A.apellido;
+
+SELECT A.nro_afiliado, A.apellido, A.nombre,
+       (SELECT TOP 1 AUT.nro_autorizacion
+        FROM AUTORIZACION AUT
+        WHERE AUT.id_afiliado = A.id_afiliado
+        ORDER BY AUT.fecha_solicitud DESC) AS ultima_autorizacion,
+       (SELECT TOP 1 AUT.fecha_solicitud
+        FROM AUTORIZACION AUT
+        WHERE AUT.id_afiliado = A.id_afiliado
+        ORDER BY AUT.fecha_solicitud DESC) AS fecha_ultima
+FROM AFILIADO A
+WHERE A.activo = 1
+ORDER BY A.apellido;
