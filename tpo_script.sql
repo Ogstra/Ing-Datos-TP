@@ -491,3 +491,77 @@ SELECT A.nro_afiliado, A.apellido, A.nombre,
 FROM AFILIADO A
 WHERE A.activo = 1
 ORDER BY A.apellido;
+
+
+CREATE VIEW V_AFILIADOS_ACTIVOS AS
+    SELECT A.id_afiliado, A.nro_afiliado, A.dni,
+           A.apellido + ', ' + A.nombre AS afiliado,
+           A.localidad, A.telefono, A.email,
+           P.nombre AS nombre_plan, P.aporte_mensual,
+           A.fecha_alta
+    FROM AFILIADO A
+    INNER JOIN PLAN_COBERTURA P ON A.id_plan = P.id_plan
+    WHERE A.activo = 1;
+
+CREATE VIEW V_AUTORIZACIONES_PENDIENTES AS
+    SELECT AUT.id_autorizacion, AUT.nro_autorizacion,
+           AUT.fecha_solicitud,
+           A.nro_afiliado,
+           A.apellido + ', ' + A.nombre AS afiliado,
+           ISNULL(B.apellido + ', ' + B.nombre, 'TITULAR') AS beneficiario,
+           T.nombre AS tipo_prestacion,
+           PR.razon_social AS prestador,
+           PR.tipo AS tipo_prestador
+    FROM AUTORIZACION AUT
+    INNER JOIN AFILIADO        A  ON AUT.id_afiliado    = A.id_afiliado
+    INNER JOIN TIPO_PRESTACION T  ON AUT.id_tipo         = T.id_tipo
+    INNER JOIN PRESTADOR       PR ON AUT.id_prestador    = PR.id_prestador
+    LEFT JOIN  BENEFICIARIO    B  ON AUT.id_beneficiario = B.id_beneficiario
+    WHERE AUT.estado = 'PENDIENTE';
+
+CREATE VIEW V_LIQUIDACIONES_POR_PAGAR AS
+    SELECT L.id_liquidacion, L.fecha_prestacion, L.fecha_presentacion,
+           P.razon_social AS prestador, P.tipo AS tipo_prestador,
+           AUT.nro_autorizacion,
+           A.nro_afiliado,
+           A.apellido + ', ' + A.nombre AS afiliado,
+           L.monto_total, L.monto_cubierto, L.monto_coseguro
+    FROM LIQUIDACION L
+    INNER JOIN AUTORIZACION AUT ON L.id_autorizacion = AUT.id_autorizacion
+    INNER JOIN PRESTADOR    P   ON L.id_prestador    = P.id_prestador
+    INNER JOIN AFILIADO     A   ON AUT.id_afiliado   = A.id_afiliado
+    WHERE L.estado = 'APROBADA';
+
+CREATE VIEW V_RESUMEN_PRESTADOR AS
+    SELECT P.id_prestador, P.razon_social, P.tipo, P.localidad,
+           COUNT(DISTINCT AUT.id_autorizacion) AS total_autorizaciones,
+           COUNT(DISTINCT L.id_liquidacion)    AS total_liquidaciones,
+           ISNULL(SUM(L.monto_total),    0)    AS monto_total_presentado,
+           ISNULL(SUM(L.monto_cubierto), 0)    AS monto_total_cubierto
+    FROM PRESTADOR P
+    LEFT JOIN AUTORIZACION AUT ON P.id_prestador = AUT.id_prestador
+    LEFT JOIN LIQUIDACION  L   ON P.id_prestador = L.id_prestador
+    WHERE P.activo = 1
+    GROUP BY P.id_prestador, P.razon_social, P.tipo, P.localidad;
+
+
+SELECT * FROM V_AFILIADOS_ACTIVOS ORDER BY afiliado;
+
+SELECT * FROM V_AFILIADOS_ACTIVOS WHERE nombre_plan = 'PREMIUM' ORDER BY afiliado;
+
+SELECT * FROM V_AUTORIZACIONES_PENDIENTES ORDER BY fecha_solicitud;
+
+SELECT * FROM V_AUTORIZACIONES_PENDIENTES
+WHERE prestador = 'Clínica del Sol S.A.'
+ORDER BY fecha_solicitud;
+
+SELECT * FROM V_LIQUIDACIONES_POR_PAGAR ORDER BY prestador, fecha_presentacion;
+
+SELECT prestador, COUNT(*) AS cant_liquidaciones, SUM(monto_cubierto) AS total_a_pagar
+FROM V_LIQUIDACIONES_POR_PAGAR
+GROUP BY prestador
+ORDER BY total_a_pagar DESC;
+
+SELECT * FROM V_RESUMEN_PRESTADOR ORDER BY monto_total_cubierto DESC;
+
+SELECT * FROM V_RESUMEN_PRESTADOR WHERE total_liquidaciones > 0 ORDER BY total_liquidaciones DESC;
