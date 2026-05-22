@@ -565,3 +565,207 @@ ORDER BY total_a_pagar DESC;
 SELECT * FROM V_RESUMEN_PRESTADOR ORDER BY monto_total_cubierto DESC;
 
 SELECT * FROM V_RESUMEN_PRESTADOR WHERE total_liquidaciones > 0 ORDER BY total_liquidaciones DESC;
+
+
+CREATE PROCEDURE SP_REGISTRAR_AFILIADO
+    @dni              VARCHAR(10),
+    @nombre           VARCHAR(50),
+    @apellido         VARCHAR(50),
+    @fecha_nacimiento DATE,
+    @sexo             CHAR(1),
+    @domicilio        VARCHAR(100),
+    @localidad        VARCHAR(50),
+    @telefono         VARCHAR(20),
+    @email            VARCHAR(100),
+    @id_plan          INT,
+    @nro_afiliado     VARCHAR(20) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF EXISTS (SELECT 1 FROM AFILIADO WHERE dni = @dni)
+    BEGIN
+        RAISERROR('El DNI %s ya está registrado.', 16, 1, @dni);
+        RETURN;
+    END
+
+    IF NOT EXISTS (SELECT 1 FROM PLAN_COBERTURA WHERE id_plan = @id_plan AND activo = 1)
+    BEGIN
+        RAISERROR('El plan indicado no existe o no está activo.', 16, 1);
+        RETURN;
+    END
+
+    DECLARE @ultimo INT;
+    SELECT @ultimo = ISNULL(MAX(CAST(SUBSTRING(nro_afiliado, 4, 5) AS INT)), 0)
+    FROM AFILIADO;
+
+    SET @nro_afiliado = 'OS-' + RIGHT('00000' + CAST(@ultimo + 1 AS VARCHAR), 5);
+
+    INSERT INTO AFILIADO (nro_afiliado, dni, nombre, apellido, fecha_nacimiento, sexo,
+                          domicilio, localidad, telefono, email, id_plan, fecha_alta)
+    VALUES (@nro_afiliado, @dni, @nombre, @apellido, @fecha_nacimiento, @sexo,
+            @domicilio, @localidad, @telefono, @email, @id_plan, CAST(GETDATE() AS DATE));
+END;
+
+CREATE PROCEDURE SP_SOLICITAR_AUTORIZACION
+    @id_afiliado      INT,
+    @id_beneficiario  INT = NULL,
+    @id_tipo          INT,
+    @id_prestador     INT,
+    @dias_vigencia    INT = 30,
+    @nro_autorizacion VARCHAR(20) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM AFILIADO WHERE id_afiliado = @id_afiliado AND activo = 1)
+    BEGIN
+        RAISERROR('Afiliado no encontrado o inactivo.', 16, 1);
+        RETURN;
+    END
+
+    DECLARE @id_plan INT;
+    SELECT @id_plan = id_plan FROM AFILIADO WHERE id_afiliado = @id_afiliado;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM PLAN_PRESTACION
+        WHERE id_plan = @id_plan AND id_tipo = @id_tipo AND requiere_autorizacion = 1
+    )
+    BEGIN
+        RAISERROR('Esta prestación no requiere autorización para el plan del afiliado.', 16, 1);
+        RETURN;
+    END
+
+    IF NOT EXISTS (SELECT 1 FROM PRESTADOR WHERE id_prestador = @id_prestador AND activo = 1)
+    BEGIN
+        RAISERROR('Prestador no encontrado o inactivo.', 16, 1);
+        RETURN;
+    END
+
+    DECLARE @anio VARCHAR(4) = CAST(YEAR(GETDATE()) AS VARCHAR);
+    DECLARE @ultimo INT;
+    SELECT @ultimo = ISNULL(MAX(CAST(SUBSTRING(nro_autorizacion, 10, 4) AS INT)), 0)
+    FROM AUTORIZACION
+    WHERE nro_autorizacion LIKE 'AUT-' + @anio + '-%';
+
+    SET @nro_autorizacion = 'AUT-' + @anio + '-' + RIGHT('0000' + CAST(@ultimo + 1 AS VARCHAR), 4);
+
+    INSERT INTO AUTORIZACION (nro_autorizacion, id_afiliado, id_beneficiario, id_tipo,
+                               id_prestador, fecha_solicitud, fecha_vencimiento, estado)
+    VALUES (@nro_autorizacion, @id_afiliado, @id_beneficiario, @id_tipo,
+            @id_prestador, GETDATE(),
+            DATEADD(DAY, @dias_vigencia, CAST(GETDATE() AS DATE)),
+            'PENDIENTE');
+END;
+
+CREATE PROCEDURE SP_CONSULTAR_COBERTURA
+    @dni     VARCHAR(10),
+    @id_tipo INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT A.nro_afiliado,
+           A.apellido + ', ' + A.nombre AS afiliado,
+           A.activo AS afiliado_activo,
+           PC.nombre AS nombre_plan,
+           T.nombre  AS prestacion,
+           PP.porcentaje_cobertura,
+           CASE PP.requiere_autorizacion WHEN 1 THEN 'Sí' ELSE 'No' END AS requiere_autorizacion
+    FROM AFILIADO A
+    INNER JOIN PLAN_COBERTURA  PC ON A.id_plan  = PC.id_plan
+    INNER JOIN PLAN_PRESTACION PP ON PC.id_plan = PP.id_plan AND PP.id_tipo = @id_tipo
+    INNER JOIN TIPO_PRESTACION T  ON PP.id_tipo = T.id_tipo
+    WHERE A.dni = @dni;
+
+    IF @@ROWCOUNT = 0
+        SELECT 'Afiliado no encontrado o prestación no cubierta en su plan.' AS mensaje;
+END;
+
+
+DECLARE @nro VARCHAR(20);
+EXEC SP_REGISTRAR_AFILIADO
+    @dni              = '39999001',
+    @nombre           = 'Diego',
+    @apellido         = 'Vargas',
+    @fecha_nacimiento = '1992-04-10',
+    @sexo             = 'M',
+    @domicilio        = 'Av. de Mayo 500',
+    @localidad        = 'Buenos Aires',
+    @telefono         = '011-5555-0011',
+    @email            = 'diego.vargas@mail.com',
+    @id_plan          = 1,
+    @nro_afiliado     = @nro OUTPUT;
+SELECT @nro AS nro_afiliado_generado;
+
+DECLARE @nro VARCHAR(20);
+EXEC SP_REGISTRAR_AFILIADO
+    @dni              = '30000001',
+    @nombre           = 'Duplicado',
+    @apellido         = 'Test',
+    @fecha_nacimiento = '1990-01-01',
+    @sexo             = 'M',
+    @domicilio        = NULL,
+    @localidad        = NULL,
+    @telefono         = NULL,
+    @email            = NULL,
+    @id_plan          = 1,
+    @nro_afiliado     = @nro OUTPUT;
+
+DECLARE @nro VARCHAR(20);
+EXEC SP_REGISTRAR_AFILIADO
+    @dni              = '39999002',
+    @nombre           = 'Test',
+    @apellido         = 'PlanInvalido',
+    @fecha_nacimiento = '1990-01-01',
+    @sexo             = 'F',
+    @domicilio        = NULL,
+    @localidad        = NULL,
+    @telefono         = NULL,
+    @email            = NULL,
+    @id_plan          = 99,
+    @nro_afiliado     = @nro OUTPUT;
+
+DECLARE @nro_aut VARCHAR(20);
+EXEC SP_SOLICITAR_AUTORIZACION
+    @id_afiliado      = 3,
+    @id_beneficiario  = NULL,
+    @id_tipo          = 6,
+    @id_prestador     = 1,
+    @dias_vigencia    = 45,
+    @nro_autorizacion = @nro_aut OUTPUT;
+SELECT @nro_aut AS nro_autorizacion_generado;
+
+DECLARE @nro_aut VARCHAR(20);
+EXEC SP_SOLICITAR_AUTORIZACION
+    @id_afiliado      = 2,
+    @id_beneficiario  = 3,
+    @id_tipo          = 8,
+    @id_prestador     = 7,
+    @dias_vigencia    = 30,
+    @nro_autorizacion = @nro_aut OUTPUT;
+SELECT @nro_aut AS nro_autorizacion_generado;
+
+DECLARE @nro_aut VARCHAR(20);
+EXEC SP_SOLICITAR_AUTORIZACION
+    @id_afiliado      = 1,
+    @id_beneficiario  = NULL,
+    @id_tipo          = 1,
+    @id_prestador     = 2,
+    @dias_vigencia    = 30,
+    @nro_autorizacion = @nro_aut OUTPUT;
+
+DECLARE @nro_aut VARCHAR(20);
+EXEC SP_SOLICITAR_AUTORIZACION
+    @id_afiliado      = 999,
+    @id_beneficiario  = NULL,
+    @id_tipo          = 6,
+    @id_prestador     = 1,
+    @dias_vigencia    = 30,
+    @nro_autorizacion = @nro_aut OUTPUT;
+
+EXEC SP_CONSULTAR_COBERTURA @dni = '30000002', @id_tipo = 3;
+
+EXEC SP_CONSULTAR_COBERTURA @dni = '30000001', @id_tipo = 5;
+
+EXEC SP_CONSULTAR_COBERTURA @dni = '99999999', @id_tipo = 1;
