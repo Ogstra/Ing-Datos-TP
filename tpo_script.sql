@@ -769,3 +769,142 @@ EXEC SP_CONSULTAR_COBERTURA @dni = '30000002', @id_tipo = 3;
 EXEC SP_CONSULTAR_COBERTURA @dni = '30000001', @id_tipo = 5;
 
 EXEC SP_CONSULTAR_COBERTURA @dni = '99999999', @id_tipo = 1;
+
+
+CREATE TRIGGER TR_AUDIT_AFILIADO_UPDATE
+ON AFILIADO
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF UPDATE(id_plan)
+        INSERT INTO AUDITORIA_AFILIADO (id_afiliado, operacion, campo_modificado, valor_anterior, valor_nuevo)
+        SELECT d.id_afiliado, 'UPDATE', 'id_plan',
+               CAST(d.id_plan AS VARCHAR), CAST(i.id_plan AS VARCHAR)
+        FROM deleted d
+        INNER JOIN inserted i ON d.id_afiliado = i.id_afiliado
+        WHERE d.id_plan <> i.id_plan;
+
+    IF UPDATE(activo)
+        INSERT INTO AUDITORIA_AFILIADO (id_afiliado, operacion, campo_modificado, valor_anterior, valor_nuevo)
+        SELECT d.id_afiliado, 'UPDATE', 'activo',
+               CAST(d.activo AS VARCHAR), CAST(i.activo AS VARCHAR)
+        FROM deleted d
+        INNER JOIN inserted i ON d.id_afiliado = i.id_afiliado
+        WHERE d.activo <> i.activo;
+
+    IF UPDATE(domicilio)
+        INSERT INTO AUDITORIA_AFILIADO (id_afiliado, operacion, campo_modificado, valor_anterior, valor_nuevo)
+        SELECT d.id_afiliado, 'UPDATE', 'domicilio',
+               d.domicilio, i.domicilio
+        FROM deleted d
+        INNER JOIN inserted i ON d.id_afiliado = i.id_afiliado
+        WHERE ISNULL(d.domicilio,'') <> ISNULL(i.domicilio,'');
+END;
+
+CREATE TRIGGER TR_VALIDAR_LIQUIDACION
+ON LIQUIDACION
+INSTEAD OF INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        LEFT JOIN AUTORIZACION AUT ON i.id_autorizacion = AUT.id_autorizacion
+        WHERE AUT.id_autorizacion IS NULL
+           OR AUT.estado <> 'APROBADA'
+           OR (AUT.fecha_vencimiento IS NOT NULL AND AUT.fecha_vencimiento < CAST(GETDATE() AS DATE))
+    )
+    BEGIN
+        RAISERROR('No se puede registrar una liquidación: la autorización no existe, no está aprobada o está vencida.', 16, 1);
+        RETURN;
+    END
+
+    IF EXISTS (
+        SELECT 1 FROM inserted i
+        INNER JOIN LIQUIDACION L ON i.id_autorizacion = L.id_autorizacion
+    )
+    BEGIN
+        RAISERROR('Ya existe una liquidación registrada para esta autorización.', 16, 1);
+        RETURN;
+    END
+
+    INSERT INTO LIQUIDACION (id_autorizacion, id_prestador, fecha_prestacion, fecha_presentacion,
+                             monto_total, monto_cubierto, monto_coseguro, estado)
+    SELECT id_autorizacion, id_prestador, fecha_prestacion, fecha_presentacion,
+           monto_total, monto_cubierto, monto_coseguro, estado
+    FROM inserted;
+
+    UPDATE AUTORIZACION
+    SET estado = 'UTILIZADA'
+    WHERE id_autorizacion IN (SELECT id_autorizacion FROM inserted);
+END;
+
+CREATE TRIGGER TR_VALIDAR_PAGO_LIQUIDACION
+ON DETALLE_PAGO
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        LEFT JOIN LIQUIDACION L ON i.id_liquidacion = L.id_liquidacion
+        WHERE L.id_liquidacion IS NULL OR L.estado NOT IN ('APROBADA','PAGADA')
+    )
+    BEGIN
+        RAISERROR('Solo se pueden incluir en pagos liquidaciones en estado APROBADA.', 16, 1);
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END
+
+    UPDATE LIQUIDACION
+    SET estado = 'PAGADA'
+    WHERE id_liquidacion IN (SELECT id_liquidacion FROM inserted);
+END;
+
+
+UPDATE AFILIADO SET id_plan = 2 WHERE id_afiliado = 1;
+
+UPDATE AFILIADO SET activo = 0 WHERE id_afiliado = 8;
+
+UPDATE AFILIADO SET domicilio = 'Corrientes 1500' WHERE id_afiliado = 5;
+
+SELECT id_auditoria, id_afiliado, campo_modificado,
+       valor_anterior, valor_nuevo, usuario, fecha_hora
+FROM AUDITORIA_AFILIADO
+ORDER BY fecha_hora DESC;
+
+INSERT INTO LIQUIDACION (id_autorizacion, id_prestador, fecha_prestacion, fecha_presentacion,
+                         monto_total, monto_cubierto, monto_coseguro, estado)
+VALUES (7, 7, '2025-11-01', '2025-11-02', 8500.00, 7650.00, 850.00, 'PENDIENTE');
+
+SELECT id_autorizacion, nro_autorizacion, estado FROM AUTORIZACION WHERE id_autorizacion = 7;
+
+INSERT INTO LIQUIDACION (id_autorizacion, id_prestador, fecha_prestacion, fecha_presentacion,
+                         monto_total, monto_cubierto, monto_coseguro, estado)
+VALUES (8, 1, '2025-11-10', '2025-11-11', 90000.00, 63000.00, 27000.00, 'PENDIENTE');
+
+INSERT INTO LIQUIDACION (id_autorizacion, id_prestador, fecha_prestacion, fecha_presentacion,
+                         monto_total, monto_cubierto, monto_coseguro, estado)
+VALUES (5, 1, '2025-11-10', '2025-11-11', 12000.00, 6000.00, 6000.00, 'PENDIENTE');
+
+UPDATE LIQUIDACION SET estado = 'APROBADA' WHERE id_liquidacion IN (5, 8);
+
+INSERT INTO PAGO_PRESTADOR (id_prestador, periodo, fecha_pago, monto_total, metodo_pago)
+VALUES (6, '2025-11', '2025-12-05', 7700.00, 'TRANSFERENCIA');
+
+INSERT INTO DETALLE_PAGO (id_pago, id_liquidacion, monto)
+VALUES (3, 5, 7700.00);
+
+SELECT id_liquidacion, estado FROM LIQUIDACION WHERE id_liquidacion = 5;
+
+INSERT INTO PAGO_PRESTADOR (id_prestador, periodo, fecha_pago, monto_total, metodo_pago)
+VALUES (7, '2025-11', '2025-12-05', 8500.00, 'TRANSFERENCIA');
+
+INSERT INTO DETALLE_PAGO (id_pago, id_liquidacion, monto)
+VALUES (4, 7, 8500.00);
