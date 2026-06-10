@@ -1,3 +1,13 @@
+-- ============================================================
+-- TPO BDI - Sistema de Gestión de Obra Social
+-- Ingeniería de Datos I - UADE 2026
+-- Docente: Lic. Escandell, Gustavo E.
+-- ============================================================
+
+-- ============================================================
+-- ETAPA 4: IMPLEMENTACION EN SQL SERVER
+-- ============================================================
+
 CREATE DATABASE OBRA_SOCIAL;
 
 USE OBRA_SOCIAL;
@@ -308,37 +318,52 @@ INSERT INTO DETALLE_PAGO (id_pago, id_liquidacion, monto) VALUES
 (2, 2, 59500.00);
 
 
+-- ============================================================
+-- ETAPA 5: CONSULTAS SQL
+-- ============================================================
+
+-- CONSULTAS BÁSICAS
+
+-- Q01: Todos los afiliados activos ordenados por apellido
 SELECT id_afiliado, nro_afiliado, apellido, nombre, dni, localidad
 FROM AFILIADO
 WHERE activo = 1
 ORDER BY apellido, nombre;
 
+-- Q02: Prestadores activos de tipo CLINICA
 SELECT id_prestador, razon_social, domicilio, localidad, telefono
 FROM PRESTADOR
 WHERE tipo = 'CLINICA' AND activo = 1
 ORDER BY razon_social;
 
+-- Q03: Autorizaciones pendientes ordenadas por fecha de solicitud
 SELECT nro_autorizacion, id_afiliado, id_tipo, id_prestador, fecha_solicitud
 FROM AUTORIZACION
 WHERE estado = 'PENDIENTE'
 ORDER BY fecha_solicitud;
 
+-- Q04: Liquidaciones aprobadas aún no pagadas
 SELECT id_liquidacion, id_autorizacion, id_prestador, monto_total, monto_cubierto
 FROM LIQUIDACION
 WHERE estado = 'APROBADA'
 ORDER BY fecha_presentacion;
 
+-- Q05: Planes de cobertura con aporte mensual mayor a $20.000
 SELECT nombre, descripcion, aporte_mensual
 FROM PLAN_COBERTURA
 WHERE aporte_mensual > 20000 AND activo = 1
 ORDER BY aporte_mensual DESC;
 
+-- CONSULTAS CON JOIN
+
+-- Q06: Afiliados con nombre de su plan
 SELECT A.nro_afiliado, A.apellido, A.nombre, A.dni, P.nombre AS nombre_plan, P.aporte_mensual
 FROM AFILIADO A
 INNER JOIN PLAN_COBERTURA P ON A.id_plan = P.id_plan
 WHERE A.activo = 1
 ORDER BY A.apellido;
 
+-- Q07: Beneficiarios con datos del afiliado titular
 SELECT B.nombre AS bene_nombre, B.apellido AS bene_apellido,
        B.parentesco, B.fecha_nacimiento,
        A.nro_afiliado, A.apellido AS titular_apellido, A.nombre AS titular_nombre
@@ -347,6 +372,7 @@ INNER JOIN AFILIADO A ON B.id_afiliado = A.id_afiliado
 WHERE B.activo = 1
 ORDER BY A.apellido, B.parentesco;
 
+-- Q08: Autorizaciones con datos de afiliado, tipo de prestación y prestador
 SELECT AUT.nro_autorizacion, AUT.estado, AUT.fecha_solicitud,
        A.apellido + ', ' + A.nombre AS afiliado,
        T.nombre AS prestacion,
@@ -357,6 +383,7 @@ INNER JOIN TIPO_PRESTACION T ON AUT.id_tipo      = T.id_tipo
 INNER JOIN PRESTADOR       P ON AUT.id_prestador = P.id_prestador
 ORDER BY AUT.fecha_solicitud DESC;
 
+-- Q09: Liquidaciones con datos de autorización y prestador
 SELECT L.id_liquidacion, L.estado, L.fecha_prestacion,
        AUT.nro_autorizacion,
        P.razon_social AS prestador,
@@ -366,6 +393,8 @@ INNER JOIN AUTORIZACION AUT ON L.id_autorizacion = AUT.id_autorizacion
 INNER JOIN PRESTADOR    P   ON L.id_prestador    = P.id_prestador
 ORDER BY L.fecha_presentacion DESC;
 
+-- Q10: Prestadores con sus especialidades
+-- LEFT JOIN para incluir prestadores sin especialidades asignadas
 SELECT P.razon_social, P.tipo, P.localidad,
        E.nombre AS especialidad
 FROM PRESTADOR P
@@ -374,6 +403,7 @@ LEFT JOIN ESPECIALIDAD            E  ON PE.id_especialidad = E.id_especialidad
 WHERE P.activo = 1
 ORDER BY P.razon_social, E.nombre;
 
+-- Q11: Coberturas del plan PLUS con porcentaje y si requiere autorización
 SELECT T.nombre AS prestacion,
        PP.porcentaje_cobertura,
        CASE PP.requiere_autorizacion WHEN 1 THEN 'Sí' ELSE 'No' END AS requiere_autorizacion
@@ -383,12 +413,17 @@ INNER JOIN TIPO_PRESTACION T  ON PP.id_tipo = T.id_tipo
 WHERE PC.nombre = 'PLUS'
 ORDER BY PP.porcentaje_cobertura DESC;
 
+-- CONSULTAS CON GROUP BY Y HAVING
+
+-- Q12: Cantidad de afiliados por plan
+-- LEFT JOIN para incluir planes sin afiliados con total 0
 SELECT P.nombre AS nombre_plan, COUNT(A.id_afiliado) AS total_afiliados
 FROM PLAN_COBERTURA P
 LEFT JOIN AFILIADO A ON P.id_plan = A.id_plan AND A.activo = 1
 GROUP BY P.id_plan, P.nombre
 ORDER BY total_afiliados DESC;
 
+-- Q13: Total liquidado (monto cubierto) por prestador
 SELECT P.razon_social, P.tipo,
        COUNT(L.id_liquidacion) AS cant_liquidaciones,
        SUM(L.monto_total)      AS total_presentado,
@@ -398,6 +433,7 @@ INNER JOIN LIQUIDACION L ON P.id_prestador = L.id_prestador
 GROUP BY P.id_prestador, P.razon_social, P.tipo
 ORDER BY total_cubierto DESC;
 
+-- Q14: Prestadores con más de 2 liquidaciones registradas
 SELECT P.razon_social, COUNT(L.id_liquidacion) AS cant_liquidaciones
 FROM PRESTADOR P
 INNER JOIN LIQUIDACION L ON P.id_prestador = L.id_prestador
@@ -405,6 +441,7 @@ GROUP BY P.id_prestador, P.razon_social
 HAVING COUNT(L.id_liquidacion) > 2
 ORDER BY cant_liquidaciones DESC;
 
+-- Q15: Monto promedio de liquidaciones por estado
 SELECT estado,
        COUNT(*)           AS cantidad,
        AVG(monto_total)   AS promedio_total,
@@ -413,6 +450,7 @@ FROM LIQUIDACION
 GROUP BY estado
 ORDER BY suma_cubierto DESC;
 
+-- Q16: Planes con aporte mensual promedio mayor a $20.000
 SELECT P.nombre AS nombre_plan, AVG(P.aporte_mensual) AS aporte_promedio, COUNT(A.id_afiliado) AS afiliados
 FROM PLAN_COBERTURA P
 INNER JOIN AFILIADO A ON P.id_plan = A.id_plan
@@ -420,12 +458,16 @@ WHERE A.activo = 1
 GROUP BY P.id_plan, P.nombre
 HAVING AVG(P.aporte_mensual) > 20000;
 
+-- SUBCONSULTAS
+
+-- Q17 [ESCALAR]: Afiliados cuyo plan tiene aporte mayor al promedio de todos los planes
 SELECT A.nro_afiliado, A.apellido, A.nombre, P.nombre AS nombre_plan, P.aporte_mensual
 FROM AFILIADO A
 INNER JOIN PLAN_COBERTURA P ON A.id_plan = P.id_plan
 WHERE P.aporte_mensual > (SELECT AVG(aporte_mensual) FROM PLAN_COBERTURA WHERE activo = 1)
 ORDER BY P.aporte_mensual DESC;
 
+-- Q18 [IN]: Afiliados que tienen al menos una autorización aprobada
 SELECT nro_afiliado, apellido, nombre, dni
 FROM AFILIADO
 WHERE id_afiliado IN (
@@ -435,6 +477,7 @@ WHERE id_afiliado IN (
 )
 ORDER BY apellido;
 
+-- Q19 [IN]: Tipos de prestación que requieren autorización en al menos un plan
 SELECT nombre, descripcion
 FROM TIPO_PRESTACION
 WHERE id_tipo IN (
@@ -444,6 +487,7 @@ WHERE id_tipo IN (
 )
 ORDER BY nombre;
 
+-- Q20 [EXISTS]: Prestadores que tienen al menos una liquidación en estado APROBADA
 SELECT P.razon_social, P.tipo, P.localidad
 FROM PRESTADOR P
 WHERE EXISTS (
@@ -454,6 +498,7 @@ WHERE EXISTS (
 )
 ORDER BY P.razon_social;
 
+-- Q21 [NOT EXISTS]: Afiliados que NO tienen ninguna autorización registrada
 SELECT A.nro_afiliado, A.apellido, A.nombre, A.fecha_alta
 FROM AFILIADO A
 WHERE NOT EXISTS (
@@ -463,6 +508,8 @@ WHERE NOT EXISTS (
 )
 ORDER BY A.apellido;
 
+-- Q22 [CORRELACIONADA]: Afiliados cuyo total liquidado supera el aporte anual de su plan
+-- La subconsulta se evalúa una vez por fila del SELECT externo
 SELECT A.nro_afiliado, A.apellido, A.nombre,
        P.nombre AS nombre_plan, P.aporte_mensual,
        P.aporte_mensual * 12 AS aporte_anual,
@@ -480,6 +527,8 @@ WHERE (
 ) > P.aporte_mensual * 12
 ORDER BY A.apellido;
 
+-- Q23 [ESCALAR CORRELACIONADA]: Última autorización por afiliado activo
+-- Dos subconsultas correlacionadas para traer nro y fecha sin subquery adicional
 SELECT A.nro_afiliado, A.apellido, A.nombre,
        (SELECT TOP 1 AUT.nro_autorizacion
         FROM AUTORIZACION AUT
@@ -494,6 +543,11 @@ WHERE A.activo = 1
 ORDER BY A.apellido;
 
 
+-- ============================================================
+-- ETAPA 6: VISTAS
+-- ============================================================
+
+-- V01: Afiliados activos con nombre de plan
 CREATE VIEW V_AFILIADOS_ACTIVOS AS
     SELECT A.id_afiliado, A.nro_afiliado, A.dni,
            A.apellido + ', ' + A.nombre AS afiliado,
@@ -504,6 +558,8 @@ CREATE VIEW V_AFILIADOS_ACTIVOS AS
     INNER JOIN PLAN_COBERTURA P ON A.id_plan = P.id_plan
     WHERE A.activo = 1;
 
+-- V02: Autorizaciones pendientes con detalle completo
+-- ISNULL sobre id_beneficiario para mostrar 'TITULAR' cuando la autorización es del afiliado
 CREATE VIEW V_AUTORIZACIONES_PENDIENTES AS
     SELECT AUT.id_autorizacion, AUT.nro_autorizacion,
            AUT.fecha_solicitud,
@@ -520,6 +576,7 @@ CREATE VIEW V_AUTORIZACIONES_PENDIENTES AS
     LEFT JOIN  BENEFICIARIO    B  ON AUT.id_beneficiario = B.id_beneficiario
     WHERE AUT.estado = 'PENDIENTE';
 
+-- V03: Liquidaciones aprobadas pendientes de pago
 CREATE VIEW V_LIQUIDACIONES_POR_PAGAR AS
     SELECT L.id_liquidacion, L.fecha_prestacion, L.fecha_presentacion,
            P.razon_social AS prestador, P.tipo AS tipo_prestador,
@@ -533,6 +590,9 @@ CREATE VIEW V_LIQUIDACIONES_POR_PAGAR AS
     INNER JOIN AFILIADO     A   ON AUT.id_afiliado   = A.id_afiliado
     WHERE L.estado = 'APROBADA';
 
+-- V04: Resumen de actividad por prestador
+-- LEFT JOIN + ISNULL para incluir prestadores sin actividad con totales en 0
+-- COUNT DISTINCT para evitar duplicación por join cartesiano entre AUT y LIQ
 CREATE VIEW V_RESUMEN_PRESTADOR AS
     SELECT P.id_prestador, P.razon_social, P.tipo, P.localidad,
            COUNT(DISTINCT AUT.id_autorizacion) AS total_autorizaciones,
@@ -546,6 +606,11 @@ CREATE VIEW V_RESUMEN_PRESTADOR AS
     GROUP BY P.id_prestador, P.razon_social, P.tipo, P.localidad;
 
 
+-- ============================================================
+-- ETAPA 6: CONSULTAS DE PRUEBA — VISTAS
+-- ============================================================
+
+-- V01: Todos los afiliados activos con su plan
 SELECT * FROM V_AFILIADOS_ACTIVOS ORDER BY afiliado;
 
 SELECT * FROM V_AFILIADOS_ACTIVOS WHERE nombre_plan = 'PREMIUM' ORDER BY afiliado;
@@ -568,6 +633,11 @@ SELECT * FROM V_RESUMEN_PRESTADOR ORDER BY monto_total_cubierto DESC;
 SELECT * FROM V_RESUMEN_PRESTADOR WHERE total_liquidaciones > 0 ORDER BY total_liquidaciones DESC;
 
 
+-- ============================================================
+-- ETAPA 7: PROCEDIMIENTOS ALMACENADOS
+-- ============================================================
+
+-- SP01: Registrar nuevo afiliado con generación automática de nro_afiliado
 CREATE PROCEDURE SP_REGISTRAR_AFILIADO
     @dni              VARCHAR(10),
     @nombre           VARCHAR(50),
@@ -608,6 +678,7 @@ BEGIN
             @domicilio, @localidad, @telefono, @email, @id_plan, CAST(GETDATE() AS DATE));
 END;
 
+-- SP02: Solicitar autorización con validaciones de negocio
 CREATE PROCEDURE SP_SOLICITAR_AUTORIZACION
     @id_afiliado      INT,
     @id_beneficiario  INT = NULL,
@@ -659,6 +730,7 @@ BEGIN
             'PENDIENTE');
 END;
 
+-- SP03: Consulta de cobertura por DNI y tipo de prestación
 CREATE PROCEDURE SP_CONSULTAR_COBERTURA
     @dni     VARCHAR(10),
     @id_tipo INT
@@ -684,6 +756,11 @@ BEGIN
 END;
 
 
+-- ============================================================
+-- ETAPA 7: CONSULTAS DE PRUEBA — PROCEDIMIENTOS ALMACENADOS
+-- ============================================================
+
+-- SP01 — caso exitoso: afiliado nuevo con plan BASICO
 DECLARE @nro VARCHAR(20);
 EXEC SP_REGISTRAR_AFILIADO
     @dni              = '39999001',
@@ -699,6 +776,7 @@ EXEC SP_REGISTRAR_AFILIADO
     @nro_afiliado     = @nro OUTPUT;
 SELECT @nro AS nro_afiliado_generado;
 
+-- SP01 — error: DNI duplicado (debe lanzar error)
 DECLARE @nro VARCHAR(20);
 EXEC SP_REGISTRAR_AFILIADO
     @dni              = '30000001',
@@ -713,6 +791,7 @@ EXEC SP_REGISTRAR_AFILIADO
     @id_plan          = 1,
     @nro_afiliado     = @nro OUTPUT;
 
+-- SP01 — error: plan inexistente
 DECLARE @nro VARCHAR(20);
 EXEC SP_REGISTRAR_AFILIADO
     @dni              = '39999002',
@@ -727,6 +806,7 @@ EXEC SP_REGISTRAR_AFILIADO
     @id_plan          = 99,
     @nro_afiliado     = @nro OUTPUT;
 
+-- SP02 — caso exitoso: afiliado 3 (PREMIUM) solicita CIRUGIA en Clínica del Sol
 DECLARE @nro_aut VARCHAR(20);
 EXEC SP_SOLICITAR_AUTORIZACION
     @id_afiliado      = 3,
@@ -737,6 +817,7 @@ EXEC SP_SOLICITAR_AUTORIZACION
     @nro_autorizacion = @nro_aut OUTPUT;
 SELECT @nro_aut AS nro_autorizacion_generado;
 
+-- SP02 — caso exitoso: afiliado 2 solicita KINESIOLOGIA para beneficiario 3
 DECLARE @nro_aut VARCHAR(20);
 EXEC SP_SOLICITAR_AUTORIZACION
     @id_afiliado      = 2,
@@ -747,6 +828,7 @@ EXEC SP_SOLICITAR_AUTORIZACION
     @nro_autorizacion = @nro_aut OUTPUT;
 SELECT @nro_aut AS nro_autorizacion_generado;
 
+-- SP02 — error: CONSULTA MEDICA no requiere autorización en plan BASICO
 DECLARE @nro_aut VARCHAR(20);
 EXEC SP_SOLICITAR_AUTORIZACION
     @id_afiliado      = 1,
@@ -756,6 +838,7 @@ EXEC SP_SOLICITAR_AUTORIZACION
     @dias_vigencia    = 30,
     @nro_autorizacion = @nro_aut OUTPUT;
 
+-- SP02 — error: afiliado inexistente
 DECLARE @nro_aut VARCHAR(20);
 EXEC SP_SOLICITAR_AUTORIZACION
     @id_afiliado      = 999,
@@ -765,13 +848,21 @@ EXEC SP_SOLICITAR_AUTORIZACION
     @dias_vigencia    = 30,
     @nro_autorizacion = @nro_aut OUTPUT;
 
+-- SP03 — María López (PLUS): LABORATORIO cubierto al 80%
 EXEC SP_CONSULTAR_COBERTURA @dni = '30000002', @id_tipo = 3;
 
+-- SP03 — Juan García (BASICO): INTERNACION no cubierta, retorna mensaje
 EXEC SP_CONSULTAR_COBERTURA @dni = '30000001', @id_tipo = 5;
 
+-- SP03 — DNI inexistente: retorna mensaje informativo
 EXEC SP_CONSULTAR_COBERTURA @dni = '99999999', @id_tipo = 1;
 
 
+-- ============================================================
+-- ETAPA 8: TRIGGERS
+-- ============================================================
+
+-- TR01: Auditar cambios en datos sensibles de AFILIADO (id_plan, activo, domicilio)
 CREATE TRIGGER TR_AUDIT_AFILIADO_UPDATE
 ON AFILIADO
 AFTER UPDATE
@@ -804,6 +895,8 @@ BEGIN
         WHERE ISNULL(d.domicilio,'') <> ISNULL(i.domicilio,'');
 END;
 
+-- TR02: INSTEAD OF INSERT — impide liquidar sobre autorización no aprobada o vencida
+-- Si pasa validaciones, inserta y marca la autorización como UTILIZADA
 CREATE TRIGGER TR_VALIDAR_LIQUIDACION
 ON LIQUIDACION
 INSTEAD OF INSERT
@@ -844,6 +937,7 @@ BEGIN
     WHERE id_autorizacion IN (SELECT id_autorizacion FROM inserted);
 END;
 
+-- TR03: Solo acepta liquidaciones APROBADA en DETALLE_PAGO; las marca como PAGADA
 CREATE TRIGGER TR_VALIDAR_PAGO_LIQUIDACION
 ON DETALLE_PAGO
 AFTER INSERT
@@ -869,41 +963,57 @@ BEGIN
 END;
 
 
+-- ============================================================
+-- ETAPA 8: CONSULTAS DE PRUEBA — TRIGGERS
+-- ============================================================
+
+-- TR01 — cambio de plan: dispara auditoría campo id_plan
 UPDATE AFILIADO SET id_plan = 2 WHERE id_afiliado = 1;
 
+-- TR01 — baja lógica: dispara auditoría campo activo
 UPDATE AFILIADO SET activo = 0 WHERE id_afiliado = 8;
 
+-- TR01 — cambio de domicilio: dispara auditoría campo domicilio
 UPDATE AFILIADO SET domicilio = 'Corrientes 1500' WHERE id_afiliado = 5;
 
+-- TR01 — verificar registros generados
 SELECT id_auditoria, id_afiliado, campo_modificado,
        valor_anterior, valor_nuevo, usuario, fecha_hora
 FROM AUDITORIA_AFILIADO
 ORDER BY fecha_hora DESC;
 
+-- TR02 — caso exitoso: autorización 7 APROBADA y vigente; queda UTILIZADA
 INSERT INTO LIQUIDACION (id_autorizacion, id_prestador, fecha_prestacion, fecha_presentacion,
                          monto_total, monto_cubierto, monto_coseguro, estado)
 VALUES (7, 7, '2025-11-01', '2025-11-02', 8500.00, 7650.00, 850.00, 'PENDIENTE');
 
+-- TR02 — verificar que autorización 7 quedó UTILIZADA
 SELECT id_autorizacion, nro_autorizacion, estado FROM AUTORIZACION WHERE id_autorizacion = 7;
 
+-- TR02 — error: autorización 8 está PENDIENTE, no APROBADA
 INSERT INTO LIQUIDACION (id_autorizacion, id_prestador, fecha_prestacion, fecha_presentacion,
                          monto_total, monto_cubierto, monto_coseguro, estado)
 VALUES (8, 1, '2025-11-10', '2025-11-11', 90000.00, 63000.00, 27000.00, 'PENDIENTE');
 
+-- TR02 — error: autorización 5 fue RECHAZADA
 INSERT INTO LIQUIDACION (id_autorizacion, id_prestador, fecha_prestacion, fecha_presentacion,
                          monto_total, monto_cubierto, monto_coseguro, estado)
 VALUES (5, 1, '2025-11-10', '2025-11-11', 12000.00, 6000.00, 6000.00, 'PENDIENTE');
 
+-- TR03 — preparar: aprobar liquidaciones 5 y 8 para poder incluirlas en pago
 UPDATE LIQUIDACION SET estado = 'APROBADA' WHERE id_liquidacion IN (5, 8);
 
+-- TR03 — caso exitoso: pago al prestador 6 con liquidación 5 (APROBADA); queda PAGADA
 INSERT INTO PAGO_PRESTADOR (id_prestador, periodo, fecha_pago, monto_total, metodo_pago)
 VALUES (6, '2025-11', '2025-12-05', 7700.00, 'TRANSFERENCIA');
 
 INSERT INTO DETALLE_PAGO (id_pago, id_liquidacion, monto)
 VALUES (3, 5, 7700.00);
 
+-- TR03 — verificar que liquidación 5 quedó PAGADA
 SELECT id_liquidacion, estado FROM LIQUIDACION WHERE id_liquidacion = 5;
 
+-- TR03 — error: liquidación 7 está PENDIENTE; TR03 hace ROLLBACK
 INSERT INTO PAGO_PRESTADOR (id_prestador, periodo, fecha_pago, monto_total, metodo_pago)
 VALUES (7, '2025-11', '2025-12-05', 8500.00, 'TRANSFERENCIA');
 
